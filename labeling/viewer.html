@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etiket Kontrolü</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1e2127; --text: #e8eaed; --muted: #9aa0a6; --line: #33373e;
+    --home: #2f7cf6; --away: #f1f1f1; --neutral: #f2b134; --dead: #e5484d; --accent: #4cc38a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 17px; margin: 0 12px 0 0; }
+  label.file { background: var(--accent); color: #062; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  label.file input { display: none; }
+  select, button, input[type=text] { background: #2a2e35; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  main { padding: 12px 16px; max-width: 1800px; margin: 0 auto; }
+  #status { color: var(--muted); }
+  #banner { display: flex; align-items: center; gap: 16px; margin: 0 0 8px; padding: 10px 14px; border-radius: 8px; background: var(--panel); border-left: 10px solid var(--line); }
+  #bannerLabel { font-size: 26px; font-weight: 700; min-width: 360px; }
+  #bannerInfo { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #bannerNext { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  video { width: 100%; background: #000; border-radius: 6px; display: block; }
+  canvas { width: 100%; display: block; border-radius: 4px; cursor: pointer; }
+  #zoomBar { height: 46px; margin-top: 8px; }
+  #fullBar { height: 18px; margin-top: 4px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } #bannerLabel { min-width: 0; } }
+  .card { background: var(--panel); border-radius: 8px; padding: 12px 14px; }
+  .card h2 { font-size: 15px; margin: 0 0 8px; }
+  .card p, .card li { color: var(--muted); }
+  kbd { background: #2a2e35; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 13px; color: var(--text); }
+  #noteRow { display: flex; gap: 8px; }
+  #noteText { flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  a { color: var(--accent); cursor: pointer; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Etiket Kontrolü</h1>
+  <label class="file">Video seç<input id="file" type="file" accept="video/mp4"></label>
+  <select id="matchSel" title="Maç ve yarı"></select>
+  <span id="status">Videoyu seçin (ör. 117093_panorama_1st_half.mp4).</span>
+</header>
+
+<main>
+  <div id="banner">
+    <div id="bannerLabel">—</div>
+    <div id="bannerInfo"></div>
+    <div id="bannerNext"></div>
+  </div>
+
+  <video id="video" preload="auto"></video>
+  <canvas id="zoomBar" title="Son 30 sn ve sonraki 30 sn. Tıklayarak gidin."></canvas>
+  <canvas id="fullBar" title="Yarının tamamı. Tıklayarak gidin."></canvas>
+
+  <div class="controls">
+    <button id="playBtn">▶ Oynat</button>
+    <button data-step="-25">−1 sn</button>
+    <button data-step="-1">−1 kare</button>
+    <button data-step="1">+1 kare</button>
+    <button data-step="25">+1 sn</button>
+    <button id="prevChange">⟵ önceki değişim</button>
+    <button id="nextChange">sonraki değişim ⟶</button>
+    <select id="rate" title="Oynatma hızı">
+      <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+      <option value="1" selected>1×</option><option value="2">2×</option>
+    </select>
+    <button id="gotoSegment">Önerilen bölüme git (10:00)</button>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>Not ekle</h2>
+      <p>Ekrandaki etiket gördüğünüzle uyuşmuyorsa videoyu durdurun, doğru ana gidin ve kısaca yazın. Kare numarası otomatik kaydedilir.</p>
+      <div id="noteRow">
+        <input id="noteText" type="text" placeholder="ör. top dışarı çıktı ama hâlâ MAVİ yazıyor">
+        <button id="addNote">Ekle</button>
+      </div>
+      <table>
+        <thead><tr><th>Zaman</th><th>Kare</th><th>Etiket</th><th>Not</th><th></th></tr></thead>
+        <tbody id="notes"></tbody>
+      </table>
+      <p><button id="export">Notları dışa aktar (CSV)</button> <span id="savedHint"></span></p>
+    </div>
+    <div class="card">
+      <h2>Nasıl kullanılır?</h2>
+      <ul>
+        <li>Üstteki büyük yazı, veri sağlayıcısının <b>o anki</b> etiketi. Şerit, önceki ve sonraki 30 saniyeyi gösterir.</li>
+        <li>Görev: <b>10:00 – 25:00</b> arasını izleyin. Etiket mantıklı mı? Sahiplik doğru takımda mı, oyun durduğunda "Oyun durmuş" yazıyor mu, değişimler doğru anda mı?</li>
+        <li>Küçük gecikmeler (yarım saniyeden az) normaldir. Belirgin hataları not edin.</li>
+        <li>Tuşlar: <kbd>Boşluk</kbd> oynat/durdur · <kbd>←</kbd>/<kbd>→</kbd> 1 sn · <kbd>,</kbd>/<kbd>.</kbd> 1 kare · <kbd>[</kbd>/<kbd>]</kbd> önceki/sonraki değişim · <kbd>N</kbd> not yaz</li>
+        <li>Notlar bu tarayıcıda otomatik saklanır. Bitince "dışa aktar" deyip dosyayı gönderin.</li>
+      </ul>
+    </div>
+  </div>
+</main>
+
+<script src="labels_soccertrack.js"></script>
+<script>
+"use strict";
+const FPS = 25;
+// Team colours per match, read off the video (home = provider HOME side).
+const TEAMS = {
+  "117093": { H: { name: "MAVİ takım (ev sahibi)", color: "#2f7cf6" }, A: { name: "BEYAZ takım (deplasman)", color: "#f1f1f1" } },
+};
+const DEFAULT_TEAMS = { H: { name: "Ev sahibi", color: "#2f7cf6" }, A: { name: "Deplasman", color: "#f1f1f1" } };
+const OTHER = {
+  N: { name: "Çekişme / top kimsede değil", color: "#f2b134" },
+  D: { name: "Oyun durmuş", color: "#e5484d" },
+  "": { name: "Etiket yok", color: "#555" },
+};
+
+const $ = id => document.getElementById(id);
+const video = $("video");
+const DATA = window.SOCCERTRACK_LABELS || {};
+let cur = null;          // {match, half, spells, n_frames}
+let frameIdx = null;     // Int32Array: frame -> spell index
+let t0 = 0;              // timestamp of video frame 1 (the files start at 1.0 s)
+let notes = [];
+
+// ---------- match / half selection ----------
+for (const m of Object.keys(DATA)) for (const h of Object.keys(DATA[m])) {
+  const o = document.createElement("option");
+  o.value = m + "|" + h; o.textContent = m + " · " + (h === "1st" ? "1. yarı" : "2. yarı");
+  $("matchSel").appendChild(o);
+}
+$("matchSel").addEventListener("change", () => selectHalf(...$("matchSel").value.split("|")));
+
+function teams() { return (cur && TEAMS[cur.match]) || DEFAULT_TEAMS; }
+function info(code) { return code === "H" || code === "A" ? teams()[code] : OTHER[code] || OTHER[""]; }
+
+function selectHalf(match, half) {
+  const d = DATA[match] && DATA[match][half];
+  if (!d) return;
+  cur = { match, half, spells: d.spells, n_frames: d.n_frames };
+  $("matchSel").value = match + "|" + half;
+  frameIdx = new Int32Array(d.n_frames + 2).fill(-1);
+  d.spells.forEach(([s, e], i) => { for (let f = s; f <= e; f++) frameIdx[f] = i; });
+  $("legend").innerHTML = ["H", "A", "N", "D"].map(c =>
+    `<span><span class="sw" style="background:${info(c).color}"></span>${info(c).name}</span>`).join("");
+  loadNotes();
+  render();
+}
+
+// ---------- video loading & time calibration ----------
+$("file").addEventListener("change", e => { const f = e.target.files[0]; if (f) { video.onerror = null; openVideo(URL.createObjectURL(f), f.name); } });
+
+function openVideo(src, name) {
+  const m = /(\d{6})_panorama_(1st|2nd)/.exec(name || "");
+  if (m && DATA[m[1]] && DATA[m[1]][m[2]]) selectHalf(m[1], m[2]);
+  else $("status").textContent = "Dosya adından maç anlaşılamadı, yukarıdan seçin.";
+  video.src = src;
+  video.onloadeddata = () => { video.onloadeddata = null; video.onerror = null; calibrate(); };
+}
+let ticking = false;
+
+// The file's first frame is stamped at 1.0 s, and browsers differ in whether they shift that to 0.
+// So we ask the browser which timestamp it shows at the very start and treat that as frame 1.
+function calibrate() {
+  const done = (t) => {
+    t0 = t;
+    $("status").textContent = `Hazır.` + (cur ? ` ${cur.match} · ${cur.half === "1st" ? "1." : "2."} yarı · ${cur.n_frames} kare.` : "");
+    render();
+  };
+  if ("requestVideoFrameCallback" in video) {
+    video.requestVideoFrameCallback((now, meta) => done(meta.mediaTime));
+    video.currentTime = 0;
+  } else {
+    // Without frame callbacks: the start offset is whatever the duration has beyond the frame count.
+    const n = cur ? cur.n_frames : Math.round(video.duration * FPS);
+    done(Math.max(0, Math.round((video.duration - n / FPS) * FPS) / FPS));
+  }
+  const tick = () => { render(); video.requestVideoFrameCallback(tick); };
+  if ("requestVideoFrameCallback" in video && !ticking) { ticking = true; video.requestVideoFrameCallback(tick); }
+}
+
+// Frame k (1-based) is on screen for t0 + (k-1)/25 <= currentTime < t0 + k/25.
+function currentFrame() {
+  return Math.max(1, Math.floor((video.currentTime - t0) * FPS + 1e-6) + 1);
+}
+function seekFrame(f) {
+  if (!cur) return;
+  f = Math.max(1, Math.min(cur.n_frames, f));
+  video.currentTime = t0 + (f - 1 + 0.5) / FPS;   // middle of the frame
+}
+const fmt = f => { const s = (f - 1) / FPS; const m = Math.floor(s / 60); return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`; };
+
+// ---------- rendering ----------
+function spellAt(f) { return frameIdx && f >= 1 && f < frameIdx.length ? frameIdx[f] : -1; }
+
+function render() {
+  if (!cur) return;
+  const f = currentFrame();
+  const i = spellAt(f);
+  const code = i >= 0 ? cur.spells[i][2] : "";
+  const inf = info(code);
+  $("bannerLabel").textContent = inf.name;
+  $("banner").style.borderLeftColor = inf.color;
+  $("bannerInfo").textContent = `${fmt(f)} · kare ${f}`;
+  if (i >= 0 && i + 1 < cur.spells.length) {
+    const nxt = cur.spells[i + 1];
+    $("bannerNext").textContent = `sonraki: ${info(nxt[2]).name} — ${((nxt[0] - f) / FPS).toFixed(1)} sn sonra`;
+  } else $("bannerNext").textContent = "";
+  drawBar($("zoomBar"), f - 30 * FPS, f + 30 * FPS, f);
+  drawBar($("fullBar"), 1, cur.n_frames, f);
+}
+
+function drawBar(cv, a, b, f) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#0c0d10"; g.fillRect(0, 0, w, h);
+  const x = fr => (fr - a) / (b - a) * w;
+  for (const [s, e, c] of cur.spells) {
+    if (e < a || s > b) continue;
+    g.fillStyle = info(c).color;
+    g.fillRect(x(s), 0, Math.max(1, x(e + 1) - x(s)), h);
+  }
+  for (const n of notes) { if (n.frame >= a && n.frame <= b) { g.fillStyle = "#4cc38a"; g.fillRect(x(n.frame) - 1, 0, 3, h); } }
+  g.fillStyle = "#000"; g.fillRect(x(f) - 2, 0, 4, h);
+  g.fillStyle = "#fff"; g.fillRect(x(f) - 1, 0, 2, h);
+  cv.dataset.a = a; cv.dataset.b = b;
+}
+for (const id of ["zoomBar", "fullBar"]) {
+  $(id).addEventListener("click", e => {
+    const cv = e.currentTarget, r = cv.getBoundingClientRect();
+    const a = +cv.dataset.a, b = +cv.dataset.b;
+    seekFrame(Math.round(a + (e.clientX - r.left) / r.width * (b - a)));
+  });
+}
+window.addEventListener("resize", render);
+video.addEventListener("seeked", render);
+video.addEventListener("timeupdate", render);
+
+// ---------- controls ----------
+function togglePlay() { video.paused ? video.play() : video.pause(); }
+video.addEventListener("play", () => $("playBtn").textContent = "⏸ Durdur");
+video.addEventListener("pause", () => $("playBtn").textContent = "▶ Oynat");
+$("playBtn").addEventListener("click", togglePlay);
+document.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => step(+b.dataset.step)));
+function step(n) { video.pause(); seekFrame(currentFrame() + n); }
+function jumpChange(dir) {
+  if (!cur) return;
+  const i = spellAt(currentFrame());
+  const j = i + dir;
+  if (j >= 0 && j < cur.spells.length) { video.pause(); seekFrame(dir > 0 ? cur.spells[j][0] : cur.spells[i][0] === currentFrame() ? cur.spells[j][0] : cur.spells[i][0]); }
+}
+$("prevChange").addEventListener("click", () => jumpChange(-1));
+$("nextChange").addEventListener("click", () => jumpChange(1));
+$("rate").addEventListener("change", () => video.playbackRate = +$("rate").value);
+$("gotoSegment").addEventListener("click", () => seekFrame(10 * 60 * FPS + 1));
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") { if (e.key === "Enter") addNote(); if (e.key === "Escape") e.target.blur(); return; }
+  const k = e.key;
+  if (k === " ") { e.preventDefault(); togglePlay(); }
+  else if (k === "ArrowLeft") { e.preventDefault(); step(-FPS); }
+  else if (k === "ArrowRight") { e.preventDefault(); step(FPS); }
+  else if (k === ",") step(-1);
+  else if (k === ".") step(1);
+  else if (k === "[") jumpChange(-1);
+  else if (k === "]") jumpChange(1);
+  else if (k === "n" || k === "N") { e.preventDefault(); video.pause(); $("noteText").focus(); }
+});
+
+// ---------- notes ----------
+const storeKey = () => cur ? `notes_${cur.match}_${cur.half}` : null;
+function loadNotes() {
+  try { notes = JSON.parse(localStorage.getItem(storeKey()) || "[]"); } catch { notes = []; }
+  drawNotes();
+}
+function saveNotes() {
+  try { localStorage.setItem(storeKey(), JSON.stringify(notes)); $("savedHint").textContent = "kaydedildi"; }
+  catch { $("savedHint").textContent = "tarayıcı saklayamadı — dışa aktarmayı unutmayın"; }
+}
+function addNote() {
+  const text = $("noteText").value.trim();
+  if (!cur || !text) return;
+  const f = currentFrame(), i = spellAt(f);
+  notes.push({ frame: f, time: fmt(f), label: i >= 0 ? cur.spells[i][2] : "", note: text });
+  notes.sort((a, b) => a.frame - b.frame);
+  $("noteText").value = ""; $("noteText").blur();
+  saveNotes(); drawNotes(); render();
+}
+$("addNote").addEventListener("click", addNote);
+function drawNotes() {
+  const tb = $("notes"); tb.innerHTML = "";
+  notes.forEach((n, k) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num"><a>${n.time}</a></td><td class="num">${n.frame}</td><td>${info(n.label).name}</td><td></td><td><a>sil</a></td>`;
+    tr.children[3].textContent = n.note;
+    tr.querySelector("td a").addEventListener("click", () => { video.pause(); seekFrame(n.frame); });
+    tr.children[4].querySelector("a").addEventListener("click", () => { notes.splice(k, 1); saveNotes(); drawNotes(); render(); });
+    tb.appendChild(tr);
+  });
+}
+$("export").addEventListener("click", () => {
+  if (!cur) return;
+  const esc = s => `"${String(s).replace(/"/g, '""')}"`;
+  const rows = ["match,half,frame,time,provider_label,note", ...notes.map(n => [cur.match, cur.half, n.frame, n.time, n.label, esc(n.note)].join(","))];
+  const blob = new Blob(["﻿" + rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `notlar_${cur.match}_${cur.half}.csv`; a.click();
+});
+
+// Developer hook: viewer.html?src=<video url> opens a video without the file picker.
+const qs = new URLSearchParams(location.search);
+if (qs.get("src")) openVideo(qs.get("src"), qs.get("src"));
+else autoOpen();
+
+// If a SoccerTrack video sits next to this page, open it without the file picker.
+function autoOpen() {
+  const names = [];
+  for (const m of Object.keys(DATA)) for (const h of Object.keys(DATA[m])) names.push(`${m}_panorama_${h}_half.mp4`);
+  if ($("matchSel").options.length) selectHalf(...$("matchSel").options[0].value.split("|"));
+  const tryNext = (i) => {
+    if (i >= names.length) { video.removeAttribute("src"); video.load(); $("status").textContent = "Videoyu seçin (ör. 117093_panorama_1st_half.mp4)."; return; }
+    video.onerror = () => tryNext(i + 1);
+    $("status").textContent = "Video aranıyor…";
+    openVideo(names[i], names[i]);
+  };
+  if (location.protocol === "file:" || location.protocol.startsWith("http")) tryNext(0);
+}
+</script>
+</body>
+</html>

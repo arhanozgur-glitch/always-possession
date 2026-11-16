@@ -1,0 +1,12 @@
+.venv/
+data/
+labels_raw/
+*.mp4
+__pycache__/
+*.pyc
+.claude/settings.local.json
+submission*.csv
+Always.csv
+models/gbm_v2_single*
+labeling/etiket_kontrol.zip
+dist/
